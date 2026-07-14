@@ -39,7 +39,7 @@
   <div class="eyebrow">Clara · sound identity</div>
   <h1>Ringtone playground</h1>
   <p class="lede">Twelve candidates to audition — the original set, riffs on the tones everyone already knows, and two built to cut through noise. Every tone is re-synthesised live from its notes, so you can tweak it in the browser: swap the instrument, drop or raise the octave, change the speed. Each ring alternates slightly so it never repeats mechanically. Land on something and hit <b>Copy settings</b> so we can render it to full quality.</p>
-  <div class="how"><b>Tip:</b> to make e.g. "Beacon in the music-box voice, an octave down and slower" — open Beacon, set Instrument → musicbox, Octave → −1, Speed → 90%. Press play to hear it loop as it would when ringing. Best judged on a phone speaker, not a laptop.</div>
+  <div class="how"><b>Tip:</b> hit play, then tweak while it's looping — instrument, octave and speed all change in real time, so you can dial in the feel by ear. Changes land on the next note; whatever's already ringing finishes cleanly. Best judged on a phone speaker, not a laptop.</div>
   <div class="opts" id="opts"></div>
   <footer>Live in-browser synthesis · real instrument samples, pitch-shifted per note · not final master quality — a tuning tool. Luke, 14 Jul 2026</footer>
 </div>
@@ -61,54 +61,63 @@ async function loadBuf(inst, midi){
   buffers[inst][midi] = buf; return buf;
 }
 
-// Rolling scheduler. All rings of a play share one master gain (clean stop via fade).
-// The cycle index advances monotonically across the whole play AND across batch
-// boundaries — so a 2-cycle tone rings 0,1,0,1,... (recurrence with variety), never
-// replaying cycle 0 at a seam. Each ring begins exactly `gap` after the previous ring's
-// last slot (incl. trailing rests), so the loop seam equals the authored gap with no
-// dead air and no click.
+// Preload helpers so instrument switches are instant.
+function ensureLoaded(inst){ return Promise.all(sampleNotesFor(inst).map(n=>loadBuf(inst,n))); }
+let _preloadedAll = false;
+function preloadAll(){ if(_preloadedAll) return; _preloadedAll = true;
+  DATA.instruments.forEach(i=>ensureLoaded(i).catch(()=>{})); }
+
+// Look-ahead scheduler ("two clocks"): a 25ms tick commits every note falling within the
+// next LOOKAHEAD onto the precise audio clock, re-reading instrument/octave/speed each
+// time — so those controls update live (next note), while notes already ringing finish
+// naturally. Timing is tracked as absolute audio times, so setTimeout jitter is harmless.
+// The cycle index advances monotonically → a 2-cycle tone rings 0,1,0,1,... (variety kept).
+const LOOKAHEAD = 0.1, TICK_MS = 25;
 function play(c, state, onDone){
   const A = ac();
   const master = A.createGain(); master.gain.value = 0.9; master.connect(A.destination);
-  const notes = sampleNotesFor(state.inst);
-  const rec = { master, sources: [], timer: null, alive: true };
+  const rec = { master, sources: [], tick: null, alive: true };
   state.playing = rec;
-  const spb = 60/(c.bpm*state.speed), step = c.step*spb, gap = (c.gap ?? 0.55);
-  let cyc = 0;
+  let cyc = 0, slot = 0;                 // position: cycle index, slot within its pattern
+  let nextTime = 0;                      // absolute audio time of the current slot
+  let doneAt = null;                     // one-shot: audio time to fire onDone/stop
 
-  function scheduleBatch(startAt){
+  function scheduler(){
     if(!rec.alive) return;
-    const batch = state.loop ? Math.max(4, c.cycles.length*2) : 1;
-    let t = startAt;
-    for(let r=0; r<batch; r++){
+    const spb = 60/(c.bpm*state.speed), step = c.step*spb, gap = (c.gap ?? 0.55);
+    const notes = sampleNotesFor(state.inst);
+    while(nextTime < A.currentTime + LOOKAHEAD){
+      if(!state.loop && cyc >= 1){       // one-shot: stop after a single cycle
+        doneAt = nextTime + TAIL;
+        rec.tick = setTimeout(()=>{ if(rec.alive){ stopRec(rec); onDone&&onDone(); } },
+                              Math.max(0,(doneAt-A.currentTime))*1000);
+        return;
+      }
       const pat = c.cycles[cyc % c.cycles.length];
-      let tt = t;
-      pat.forEach(m=>{
-        if(m!==null){
-          const midi = m + 12*state.octave, sn = nearest(midi, notes);
-          const src = A.createBufferSource(); src.buffer = buffers[state.inst][sn];
+      const m = pat[slot];
+      if(m !== null && buffers[state.inst]){
+        const midi = m + 12*state.octave, sn = nearest(midi, notes);
+        const buf = buffers[state.inst][sn];
+        if(buf){
+          const src = A.createBufferSource(); src.buffer = buf;
           src.playbackRate.value = Math.pow(2,(midi-sn)/12);
           const g = A.createGain(); g.gain.value = 0.85; src.connect(g); g.connect(master);
-          src.start(tt); rec.sources.push(src);
+          src.start(nextTime); rec.sources.push(src);
         }
-        tt += step;
-      });
-      t = t + pat.length*step + gap;   // next ring start — exact gap, incl trailing rests
-      cyc++;
+      }
+      const isLast = (slot === pat.length - 1);
+      nextTime += step + (isLast ? gap : 0);   // exact per-candidate gap, incl trailing rests
+      slot++;
+      if(slot >= pat.length){ slot = 0; cyc++; }
     }
-    if(state.loop){
-      // re-arm ~250ms before the next batch's first ring is due (audio-clock accurate)
-      rec.timer = setTimeout(()=>scheduleBatch(t), Math.max(0,(t-0.25-A.currentTime))*1000);
-    } else {
-      const endAt = t - gap + TAIL;   // t-gap = the single ring's musical end; +TAIL = its ring-out
-      rec.timer = setTimeout(()=>{ if(rec.alive){ stopRec(rec); onDone&&onDone(); } },
-                             Math.max(0,(endAt-A.currentTime))*1000);
-    }
+    rec.tick = setTimeout(scheduler, TICK_MS);
   }
 
-  return Promise.all(notes.map(n=>loadBuf(state.inst,n))).then(()=>{
-    if(!rec.alive) return rec;                 // stopped during preload
-    scheduleBatch(A.currentTime + 0.06);
+  return ensureLoaded(state.inst).then(()=>{
+    if(!rec.alive) return rec;                  // stopped during preload
+    nextTime = A.currentTime + 0.08;
+    scheduler();
+    preloadAll();                               // background: make later switches instant
     return rec;
   });
 }
@@ -116,7 +125,7 @@ function play(c, state, onDone){
 function stopRec(rec){
   if(!rec || !rec.alive) return;
   rec.alive = false;
-  clearTimeout(rec.timer);
+  clearTimeout(rec.tick);
   const A = ctx;
   try { rec.master.gain.setTargetAtTime(0, A.currentTime, 0.02); } catch(e){}
   const srcs = rec.sources, master = rec.master;
@@ -159,9 +168,9 @@ DATA.groups.forEach(group=>{
     function stop(){ if(state.playing){ stopRec(state.playing); state.playing=null; } setUI(false); }
     const ctrl = { state, stop, setUI };
     CARDS.push(ctrl);
-    inst.onchange=()=>{ state.inst=inst.value; };
-    oct.oninput=()=>{ state.octave=+oct.value; sync(); };
-    spd.oninput=()=>{ state.speed=+spd.value; sync(); };
+    inst.onchange=()=>{ state.inst=inst.value; ensureLoaded(inst.value).catch(()=>{}); };
+    oct.oninput=()=>{ state.octave=+oct.value; sync(); };  // live: applies from the next note
+    spd.oninput=()=>{ state.speed=+spd.value; sync(); };   // live: applies from the next note
     loopCb.onchange=()=>state.loop=loopCb.checked;
     playBtn.onclick=async()=>{
       if(state.starting) return;
