@@ -69,6 +69,7 @@ h2{font-family:var(--round);font-size:clamp(23px,3.4vw,32px);font-weight:700;lin
 .tone{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px 20px;
   transition:border-color .18s ease;}
 .tone.on{border-color:var(--deep);}
+.tone.reserve{border-style:dashed;}
 .tone-top{display:flex;align-items:baseline;gap:10px;}
 .num{font-family:var(--mono);font-size:12px;color:var(--faint);}
 .tone h3{font-family:var(--round);font-size:19px;font-weight:700;margin:0;letter-spacing:-.01em;
@@ -265,8 +266,8 @@ footer .fmt{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top
       </div>
     </article>
 <article class="tone" data-cid="hold-vibes" data-loop="true">
-      <div class="tone-top"><h3>Hold · Vibes<span class="kind">Loops</span></h3></div>
-      <p class="tone-desc">A recurring vibraphone line over soft keys. Something easy to wait to.</p>
+      <div class="tone-top"><h3>Hold · Vibes<span class="tag">Default</span></h3></div>
+      <p class="tone-desc">A recurring vibraphone line over soft keys. Something easy to wait to. This is the bed callers hear.</p>
       <div class="tone-play">
         <button class="pl" aria-pressed="false" aria-label="Play Hold · Vibes">
           <svg class="i-play" viewBox="0 0 24 24" width="17" height="17"><path d="M8 5v14l11-7z"/></svg>
@@ -275,9 +276,9 @@ footer .fmt{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top
         <canvas class="wave" width="600" height="80"></canvas>
       </div>
     </article>
-<article class="tone" data-cid="hold-groove" data-loop="true">
-      <div class="tone-top"><h3>Hold · Groove<span class="kind">Loops</span></h3></div>
-      <p class="tone-desc">Soft Rhodes, a brushed shuffle, warm bass. A little more movement.</p>
+<article class="tone reserve" data-cid="hold-groove" data-loop="true">
+      <div class="tone-top"><h3>Hold · Groove<span class="kind">Future option</span></h3></div>
+      <p class="tone-desc">Soft Rhodes, a brushed shuffle, warm bass. A warmer alternative, kept in reserve if we ever offer a choice.</p>
       <div class="tone-play">
         <button class="pl" aria-pressed="false" aria-label="Play Hold · Groove">
           <svg class="i-play" viewBox="0 0 24 24" width="17" height="17"><path d="M8 5v14l11-7z"/></svg>
@@ -287,7 +288,7 @@ footer .fmt{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top
       </div>
     </article>
     </div>
-    <p class="note">The hold beds are mixed to sit quietly under a voice, so they play a little louder here than they will on a live call. Both loop without a seam.</p>
+    <p class="note"><b>Vibes</b> is the hold music that ships. <b>Groove</b> stays in as a second direction, ready if we ever want to offer a choice. Both are mixed to sit quietly under a voice, so they play a little louder here than they will on a live call, and both loop without a seam.</p>
   </section>
 
   <footer class="wrap">
